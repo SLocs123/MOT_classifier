@@ -1,4 +1,4 @@
-# vehicle-classifier-infer
+# MOT_classifier
 
 Inference package for checkpoints saved by this repository's DINOv2 trainers:
 
@@ -13,7 +13,7 @@ Inference package for checkpoints saved by this repository's DINOv2 trainers:
 From this repository root:
 
 ```bash
-pip install -e vehicle_infer_pkg
+pip install -e MOT_classifier
 ```
 
 ## Usage
