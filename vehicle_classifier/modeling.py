@@ -52,6 +52,7 @@ def _load_backbone(backbone_name: str, dinov2_repo_path: str | Path) -> nn.Modul
 
 
 def _make_head(feat_dim: int, hidden_dim: int, out_dim: int) -> nn.Sequential:
+    """Create the small MLP head used by the classifier prediction heads."""
     return nn.Sequential(
         nn.Linear(feat_dim, hidden_dim),
         nn.GELU(),
@@ -61,6 +62,7 @@ def _make_head(feat_dim: int, hidden_dim: int, out_dim: int) -> nn.Sequential:
 
 
 def infer_model_variant(state_dict: Mapping[str, torch.Tensor]) -> str:
+    """Identify which checkpoint variant is being loaded from its state-dictionary structure."""
     has_size_projection = "size_projection.0.weight" in state_dict
     has_aggregation = "aggregation_mlp.0.weight" in state_dict
     has_head_norm = "head_norm.weight" in state_dict
@@ -98,6 +100,7 @@ def infer_model_variant(state_dict: Mapping[str, torch.Tensor]) -> str:
 
 
 def variant_uses_image_size(variant: str) -> bool:
+    """Return whether the model variant expects the explicit image-size tensor at inference time."""
     return variant in SIZE_AWARE_VARIANTS
 
 
@@ -110,6 +113,7 @@ def build_model_for_checkpoint(
     n_subtypes: int,
     dinov2_repo_path: str | Path = "dinov2",
 ) -> tuple[nn.Module, str]:
+    """Instantiate the correct model class for the loaded checkpoint variant and label counts."""
     variant = infer_model_variant(state_dict)
     if "colour_head.0.weight" in state_dict:
         hidden_dim = int(state_dict["colour_head.0.weight"].shape[0])
@@ -220,12 +224,13 @@ class DinoVehicleAttributeModel(nn.Module):
         self.car_subtype_head = _make_head(feat_dim, hidden_dim, n_subtypes)
 
     def forward(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
-        features = self.backbone(images)
-        features = self.norm(features)
+        backbone_features = self.backbone(images)
+        features = self.norm(backbone_features)
         return {
             "colour": self.colour_head(features),
             "type": self.type_head(features),
             "car_subtype": self.car_subtype_head(features),
+            "backbone_features": backbone_features,
         }
 
 
@@ -259,14 +264,15 @@ class DinoVehicleAttributeModelWithSize(nn.Module):
         self.car_subtype_head = _make_head(head_input_dim, hidden_dim, n_subtypes)
 
     def forward(self, images: torch.Tensor, image_size: torch.Tensor) -> dict[str, torch.Tensor]:
-        features = self.backbone(images)
+        backbone_features = self.backbone(images)
         size_features = self.size_projection(image_size.float())
-        features = torch.cat([features, size_features], dim=1)
+        features = torch.cat([backbone_features, size_features], dim=1)
         features = self.norm(features)
         return {
             "colour": self.colour_head(features),
             "type": self.type_head(features),
             "car_subtype": self.car_subtype_head(features),
+            "backbone_features": backbone_features,
         }
 
 
@@ -288,9 +294,9 @@ class DinoVehicleTypeOnlyModel(nn.Module):
         self.type_head = _make_head(feat_dim, hidden_dim, n_types)
 
     def forward(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
-        features = self.backbone(images)
-        features = self.norm(features)
-        return {"type": self.type_head(features)}
+        backbone_features = self.backbone(images)
+        features = self.norm(backbone_features)
+        return {"type": self.type_head(features), "backbone_features": backbone_features}
 
 
 class DinoVehicleTypeOnlyModelWithSize(nn.Module):
@@ -317,11 +323,11 @@ class DinoVehicleTypeOnlyModelWithSize(nn.Module):
         self.type_head = _make_head(feat_dim + size_emb_dim, hidden_dim, n_types)
 
     def forward(self, images: torch.Tensor, image_size: torch.Tensor) -> dict[str, torch.Tensor]:
-        features = self.backbone(images)
+        backbone_features = self.backbone(images)
         size_features = self.size_projection(image_size.float())
-        features = torch.cat([features, size_features], dim=1)
+        features = torch.cat([backbone_features, size_features], dim=1)
         features = self.norm(features)
-        return {"type": self.type_head(features)}
+        return {"type": self.type_head(features), "backbone_features": backbone_features}
 
 
 class _IntermediateBackboneMixin:
@@ -391,9 +397,11 @@ class DinoVehicleTypeOnlyModelIntermediate(_IntermediateBackboneMixin, nn.Module
         self.type_head = _make_head(feat_dim, hidden_dim, n_types)
 
     def forward(self, images: torch.Tensor, image_size: torch.Tensor) -> dict[str, torch.Tensor]:
+        # Separate plain backbone forward pass for a task-agnostic descriptor.
+        backbone_features = self.backbone(images)
         aggregated_features, _size_features = self._aggregate_intermediates(images, image_size)
         head_features = self.head_norm(aggregated_features)
-        return {"type": self.type_head(head_features)}
+        return {"type": self.type_head(head_features), "backbone_features": backbone_features}
 
 
 class DinoVehicleTypeOnlyModelIntermediateWithSize(_IntermediateBackboneMixin, nn.Module):
@@ -428,10 +436,12 @@ class DinoVehicleTypeOnlyModelIntermediateWithSize(_IntermediateBackboneMixin, n
         self.type_head = _make_head(head_input_dim, hidden_dim, n_types)
 
     def forward(self, images: torch.Tensor, image_size: torch.Tensor) -> dict[str, torch.Tensor]:
+        # Separate plain backbone forward pass for a task-agnostic descriptor.
+        backbone_features = self.backbone(images)
         aggregated_features, size_features = self._aggregate_intermediates(images, image_size)
         head_features = torch.cat([aggregated_features, size_features], dim=1)
         head_features = self.head_norm(head_features)
-        return {"type": self.type_head(head_features)}
+        return {"type": self.type_head(head_features), "backbone_features": backbone_features}
 
 
 class DinoVehicleAttributeModelIntermediate(_IntermediateBackboneMixin, nn.Module):
@@ -468,12 +478,15 @@ class DinoVehicleAttributeModelIntermediate(_IntermediateBackboneMixin, nn.Modul
         self.car_subtype_head = _make_head(feat_dim, hidden_dim, n_subtypes)
 
     def forward(self, images: torch.Tensor, image_size: torch.Tensor) -> dict[str, torch.Tensor]:
+        # Separate plain backbone forward pass for a task-agnostic descriptor.
+        backbone_features = self.backbone(images)
         aggregated_features, _size_features = self._aggregate_intermediates(images, image_size)
         head_features = self.head_norm(aggregated_features)
         return {
             "colour": self.colour_head(head_features),
             "type": self.type_head(head_features),
             "car_subtype": self.car_subtype_head(head_features),
+            "backbone_features": backbone_features,
         }
 
 
@@ -513,6 +526,8 @@ class DinoVehicleAttributeModelIntermediateWithSize(_IntermediateBackboneMixin, 
         self.car_subtype_head = _make_head(head_input_dim, hidden_dim, n_subtypes)
 
     def forward(self, images: torch.Tensor, image_size: torch.Tensor) -> dict[str, torch.Tensor]:
+        # Separate plain backbone forward pass for a task-agnostic descriptor.
+        backbone_features = self.backbone(images)
         aggregated_features, size_features = self._aggregate_intermediates(images, image_size)
         head_features = torch.cat([aggregated_features, size_features], dim=1)
         head_features = self.head_norm(head_features)
@@ -520,4 +535,5 @@ class DinoVehicleAttributeModelIntermediateWithSize(_IntermediateBackboneMixin, 
             "colour": self.colour_head(head_features),
             "type": self.type_head(head_features),
             "car_subtype": self.car_subtype_head(head_features),
+            "backbone_features": backbone_features,
         }

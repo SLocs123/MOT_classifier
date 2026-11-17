@@ -1,19 +1,26 @@
-"""Public package API for vehicle attribute checkpoint inference."""
+"""Public package API for vehicle attribute checkpoint inference.
 
-from .low_fps_wrapper import ExplicitExtractor
+This package exposes the model constructors, evaluation transform, and
+explicit cost helpers used to compare track/detection classifier outputs.
+"""
+
+from .config import ClassificationConfig
+from .config import ExplicitFeatureConfig
+from .config import ModelConfig
+from .confidence import calculate_directional_classifier_cost
+from .confidence import entropy_reliability
+from .confidence import normalised_js_divergence
+from .feature_extraction import ExplicitFeatureExtractor
+from .metrics import ClassifierMetrics
+from .metrics import PenaltyMatrices
+from .metrics import configure_classifier_metrics
+from .metrics import get_classifier_metrics
 from .predictor import VehicleClassifier
 from .predictor import VehicleClassifierBase
 from .predictor import VehicleClassifierIntermediate
 from .predictor import VehicleClassifierIntermediateWithSize
 from .predictor import VehicleClassifierTypeOnly
 from .predictor import VehicleClassifierWithSize
-from .confidence import calculate_directional_classifier_cost
-from .confidence import entropy_reliability
-from .confidence import normalised_js_divergence
-from .metrics import ClassifierMetrics
-from .metrics import PenaltyMatrices
-from .metrics import configure_classifier_metrics
-from .metrics import get_classifier_metrics
 from .predictor import vehicle_classifier
 from .predictor import vehicle_classifier_base
 from .predictor import vehicle_classifier_intermediate
@@ -21,7 +28,8 @@ from .predictor import vehicle_classifier_intermediate_with_size
 from .predictor import vehicle_classifier_type_only
 from .predictor import vehicle_classifier_with_size
 
-# Public aliases for downstream tracker code.
+# Historical compatibility aliases kept without altering the runtime workflow.
+ExplicitExtractor = ExplicitFeatureExtractor
 explicitExtractor = ExplicitExtractor
 explicitExctractor = ExplicitExtractor
 
@@ -33,6 +41,10 @@ __all__ = [
     "VehicleClassifierIntermediateWithSize",
     "VehicleClassifierTypeOnly",
     "ExplicitExtractor",
+    "ExplicitFeatureExtractor",
+    "ClassificationConfig",
+    "ExplicitFeatureConfig",
+    "ModelConfig",
     "explicitExtractor",
     "explicitExctractor",
     "PenaltyMatrices",
